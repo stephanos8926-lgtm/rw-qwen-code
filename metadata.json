@@ -1,0 +1,5 @@
+{
+  "name": "Qwen Code CLI UI",
+  "description": "Enterprise-grade User Interface for the qwen-code-cli, featuring a hybrid WebSocket/REST backend, dual code editors, and a Material/Fluent blended design.",
+  "requestFramePermissions": []
+}
