@@ -23,6 +23,14 @@
 }
 
 @layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+  
   .glass-panel {
     @apply bg-surface backdrop-blur-xl border border-border shadow-lg;
   }
@@ -33,6 +41,14 @@
 
   .fluent-border {
     @apply border border-white/10;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 
   /* Custom scrollbar for a sleek look */

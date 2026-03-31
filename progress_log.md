@@ -43,4 +43,20 @@
 - **Action**: Created `ChatInterface.tsx` to handle WebSocket connections to `/chat`, streaming token rendering, and markdown parsing.
 - **Action**: Created `TerminalEmulator.tsx` to handle WebSocket connections to `/terminal` and render a fully functional `xterm.js` instance with a custom theme.
 - **Action**: Updated `SidePanel.tsx` to conditionally render the Chat and Terminal components while preserving their state in the background.
-- **Status**: Chat & Terminal Integration complete. Ready for Phase 7 (Polish, Testing, and Refinement).
+## [2026-03-31] Phase 7: Polish, Testing, and Refinement
+- **Action**: Installed `react-simple-code-editor` and `prismjs` for syntax highlighting in the Lightweight Editor.
+- **Action**: Updated `LightweightEditor.tsx` to use Prism for syntax highlighting based on the active file's extension.
+- **Action**: Integrated `framer-motion` into `ChatInterface.tsx` to animate incoming messages.
+- **Action**: Added hover and tap animations to `SidebarItem` components using `framer-motion`.
+- **Status**: Phase 7 complete. Project is fully functional and polished.
+
+## [2026-03-31] Phase 8: Desktop IDE Layout Revamp
+- **Action**: Installed `react-resizable-panels` to support a resizable, split-pane desktop layout.
+- **Action**: Updated `App.tsx` to use `Group`, `Panel`, and `Separator` for a VS Code-like layout (Sidebar left, Editor middle, Chat right, Terminal bottom).
+- **Action**: Created a `useMediaQuery` hook to conditionally render the desktop split-pane layout vs. the mobile tabbed layout.
+- **Action**: Updated `WorkspaceContext.tsx` to support multiple open tabs and track the active tab.
+- **Action**: Updated `MainEditor.tsx` to include a scrollable tab bar along the top.
+- **Action**: Created `Configuration.tsx` to serve as a settings page, accessible via a new tab.
+- **Action**: Updated `Sidebar.tsx` to open the Configuration tab when "Settings" is clicked.
+- **Action**: Added `ResizeObserver` to `TerminalEmulator.tsx` to ensure `xterm.js` resizes correctly within the new split panes.
+- **Status**: Phase 8 complete. Desktop layout now resembles a full IDE.

@@ -1,0 +1,24 @@
+{
+  "theme": "Default",
+  "language": "zh",
+  "usageStatisticsEnabled": true,
+  "autoConfigureMaxOldSpaceSize": true,
+  "fileFiltering": {
+    "respectGitIgnore": true,
+    "enableRecursiveFileSearch": true
+  },
+  "telemetry": {
+    "logPrompts": true
+  },
+  "mcpServers": {
+    "duckduckgo": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@oevortex/ddg_search"
+      ],
+      "timeout": 30000
+    }
+  },
+  "sandbox": false
+}

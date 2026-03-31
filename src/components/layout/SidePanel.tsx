@@ -2,12 +2,13 @@ import { MessageSquare, Terminal } from 'lucide-react';
 import { useState } from 'react';
 import { ChatInterface } from '../panel/ChatInterface';
 import { TerminalEmulator } from '../panel/TerminalEmulator';
+import { cn } from '@/src/lib/utils';
 
-export function SidePanel() {
+export function SidePanel({ className }: { className?: string }) {
   const [activeTab, setActiveTab] = useState<'chat' | 'terminal'>('chat');
 
   return (
-    <aside className="w-96 h-full glass-panel flex flex-col border-l border-y-0 border-r-0 shadow-2xl z-20">
+    <aside className={cn("w-full lg:w-96 h-full glass-panel flex-col border-l border-y-0 border-r-0 shadow-2xl z-20 shrink-0", className)}>
       {/* Panel Tabs */}
       <div className="flex border-b border-border h-12 shrink-0">
         <button 
