@@ -7,6 +7,7 @@ import { cn } from '@/src/lib/utils';
 export function CommandPalette() {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -19,6 +20,27 @@ export function CommandPalette() {
     createWorkspace,
     currentWorkspace
   } = useWorkspace();
+
+  // Fetch search results when search query changes
+  useEffect(() => {
+    if (search.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(search)}&workspace=${encodeURIComponent(currentWorkspace)}`);
+        const data = await res.json();
+        setSearchResults(data.results || []);
+        setSelectedIndex(0);
+      } catch (error) {
+        console.error('Search error:', error);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [search, currentWorkspace]);
 
   // Handle keyboard shortcuts to open/close
   useEffect(() => {
@@ -86,10 +108,22 @@ export function CommandPalette() {
     type: 'file'
   }));
 
-  const allItems = [...commands, ...fileItems];
+  const searchItems = searchResults.map((res, i) => ({
+    id: `search-${i}`,
+    title: `${res.file}:${res.line}`,
+    icon: <Search size={16} />,
+    action: () => {
+      selectFile(res.file, true, parseInt(res.line));
+    },
+    type: 'search',
+    content: res.content
+  }));
+
+  const allItems: { id: string, title: string, icon: React.ReactNode, action: () => void, type: string, content?: string }[] = [...commands, ...fileItems, ...searchItems];
 
   const filteredItems = allItems.filter(item => 
-    item.title.toLowerCase().includes(search.toLowerCase())
+    item.title.toLowerCase().includes(search.toLowerCase()) || 
+    (item.type === 'search' && item.content.toLowerCase().includes(search.toLowerCase()))
   );
 
   // Handle keyboard navigation within the palette
@@ -191,9 +225,17 @@ export function CommandPalette() {
                   <div className="mr-3 flex-shrink-0">
                     {item.icon}
                   </div>
-                  <span className="flex-1 truncate">{item.title}</span>
+                  <div className="flex-1 truncate">
+                    <div className="text-sm">{item.title}</div>
+                    {item.type === 'search' && (
+                      <div className="text-xs text-muted-foreground truncate">{item.content}</div>
+                    )}
+                  </div>
                   {item.type === 'file' && (
                     <span className="text-xs text-muted-foreground ml-2">File</span>
+                  )}
+                  {item.type === 'search' && (
+                    <span className="text-xs text-muted-foreground ml-2">Search</span>
                   )}
                 </div>
               ))

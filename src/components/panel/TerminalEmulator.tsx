@@ -5,7 +5,7 @@ import 'xterm/css/xterm.css';
 import { useWorkspace } from '@/src/context/WorkspaceContext';
 import { Terminal as TerminalIcon, Settings, Zap, Copy, ClipboardPaste, Trash2 } from 'lucide-react';
 
-export function TerminalEmulator() {
+export function TerminalEmulator({ tabId }: { tabId: string }) {
   const { currentWorkspace, activeTabId } = useWorkspace();
   const [shellProfile, setShellProfile] = useState<'bash' | 'zsh' | 'sh'>('bash');
   const terminalRef = useRef<HTMLDivElement>(null);

@@ -6,6 +6,7 @@ import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import os from 'os';
+import simpleGit from 'simple-git';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,6 +29,95 @@ async function startServer() {
     await fs.mkdir(dir, { recursive: true });
     return dir;
   };
+
+  async function buildFileTree(dir: string, baseDir: string): Promise<any[]> {
+    const items = await fs.readdir(dir, { withFileTypes: true });
+    const tree = [];
+    for (const item of items) {
+      const fullPath = path.join(dir, item.name);
+      const relativePath = path.relative(baseDir, fullPath);
+      if (item.isDirectory()) {
+        tree.push({
+          name: item.name,
+          path: relativePath,
+          type: 'directory',
+          children: await buildFileTree(fullPath, baseDir)
+        });
+      } else {
+        tree.push({
+          name: item.name,
+          path: relativePath,
+          type: 'file'
+        });
+      }
+    }
+    return tree;
+  }
+
+  // Git Status
+  app.get('/api/git/status', async (req, res) => {
+    try {
+      const workspace = req.query.workspace as string || 'default';
+      const dir = await getWorkspaceDir(workspace);
+      const git = simpleGit(dir);
+      
+      // Check if it's a git repo
+      const isRepo = await git.checkIsRepo();
+      if (!isRepo) {
+        return res.json({ isRepo: false });
+      }
+
+      const status = await git.status();
+      res.json({ isRepo: true, status });
+    } catch (error) {
+      console.error('Git status error:', error);
+      res.status(500).json({ error: 'Failed to get git status' });
+    }
+  });
+
+  // Git Commit
+  app.post('/api/git/commit', async (req, res) => {
+    try {
+      const workspace = req.query.workspace as string || 'default';
+      const dir = await getWorkspaceDir(workspace);
+      const git = simpleGit(dir);
+      const { message } = req.body;
+      await git.add('.');
+      await git.commit(message);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Git commit error:', error);
+      res.status(500).json({ error: 'Failed to commit' });
+    }
+  });
+
+  // Git Push
+  app.post('/api/git/push', async (req, res) => {
+    try {
+      const workspace = req.query.workspace as string || 'default';
+      const dir = await getWorkspaceDir(workspace);
+      const git = simpleGit(dir);
+      await git.push();
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Git push error:', error);
+      res.status(500).json({ error: 'Failed to push' });
+    }
+  });
+
+  // Git Pull
+  app.post('/api/git/pull', async (req, res) => {
+    try {
+      const workspace = req.query.workspace as string || 'default';
+      const dir = await getWorkspaceDir(workspace);
+      const git = simpleGit(dir);
+      await git.pull();
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Git pull error:', error);
+      res.status(500).json({ error: 'Failed to pull' });
+    }
+  });
 
   // Ensure default workspace exists and seed it
   try {
@@ -69,9 +159,80 @@ async function startServer() {
       const workspace = req.query.workspace as string || 'default';
       const dir = await getWorkspaceDir(workspace);
       const files = await fs.readdir(dir);
-      res.json({ files });
+      const tree = await buildFileTree(dir, dir);
+      res.json({ files, tree });
     } catch (error) {
       res.status(500).json({ error: 'Failed to read workspace' });
+    }
+  });
+
+  // Search files
+  app.get('/api/search', async (req, res) => {
+    try {
+      const workspace = req.query.workspace as string || 'default';
+      const query = req.query.q as string;
+      if (!query) return res.status(400).json({ error: 'Query is required' });
+      
+      const dir = await getWorkspaceDir(workspace);
+      
+      // Use grep to search files
+      const grep = spawn('grep', ['-rI', '-n', query, dir]);
+      
+      let output = '';
+      grep.stdout.on('data', (data) => { output += data.toString(); });
+      
+      grep.on('close', (code) => {
+        const results = output.split('\n').filter(line => line.trim() !== '').map(line => {
+          const [file, lineNum, ...content] = line.split(':');
+          return {
+            file: path.relative(dir, file),
+            line: lineNum,
+            content: content.join(':').trim()
+          };
+        });
+        res.json({ results });
+      });
+    } catch (error) {
+      console.error('Search error:', error);
+      res.status(500).json({ error: 'Failed to search' });
+    }
+  });
+
+  // Replace in files
+  app.post('/api/replace', async (req, res) => {
+    try {
+      const { workspace, search, replace } = req.body;
+      if (!search) return res.status(400).json({ error: 'Search query is required' });
+      
+      const dir = await getWorkspaceDir(workspace || 'default');
+      
+      // Find files containing the search string
+      const grep = spawn('grep', ['-rlI', search, dir]);
+      let output = '';
+      grep.stdout.on('data', (data) => { output += data.toString(); });
+      
+      grep.on('close', async (code) => {
+        const files = output.split('\n').filter(line => line.trim() !== '');
+        
+        const results = [];
+        for (const file of files) {
+          try {
+            const content = await fs.readFile(file, 'utf-8');
+            const newContent = content.split(search).join(replace || '');
+            if (content !== newContent) {
+              await fs.writeFile(file, newContent, 'utf-8');
+              results.push(path.relative(dir, file));
+            }
+          } catch (e) {
+            console.error(`Failed to replace in file ${file}:`, e);
+          }
+        }
+        
+        res.json({ success: true, replacedIn: results });
+      });
+    } catch (error) {
+      console.error('Replace error:', error);
+      res.status(500).json({ error: 'Failed to replace' });
     }
   });
 
@@ -97,6 +258,57 @@ async function startServer() {
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: 'Failed to save file' });
+    }
+  });
+
+  // Delete file
+  app.delete('/api/files/:filename', async (req, res) => {
+    try {
+      const workspace = req.query.workspace as string || 'default';
+      const dir = await getWorkspaceDir(workspace);
+      await fs.unlink(path.join(dir, req.params.filename));
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to delete file' });
+    }
+  });
+
+  // Rename file
+  app.post('/api/files/:filename/rename', async (req, res) => {
+    try {
+      const workspace = req.query.workspace as string || 'default';
+      const dir = await getWorkspaceDir(workspace);
+      const { newName } = req.body;
+      await fs.rename(path.join(dir, req.params.filename), path.join(dir, newName));
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to rename file' });
+    }
+  });
+
+  // New Folder
+  app.post('/api/files/mkdir', async (req, res) => {
+    try {
+      const workspace = req.query.workspace as string || 'default';
+      const dir = await getWorkspaceDir(workspace);
+      const { folderName } = req.body;
+      await fs.mkdir(path.join(dir, folderName), { recursive: true });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to create folder' });
+    }
+  });
+
+  // Copy file/folder
+  app.post('/api/files/copy', async (req, res) => {
+    try {
+      const workspace = req.query.workspace as string || 'default';
+      const dir = await getWorkspaceDir(workspace);
+      const { source, destination } = req.body;
+      await fs.copyFile(path.join(dir, source), path.join(dir, destination));
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to copy file' });
     }
   });
 
@@ -192,6 +404,98 @@ async function startServer() {
     } catch (e) {}
 
     res.json({ activeAgent: settings.agentModel || 'qwen-coder', loadedSkills: [] });
+  });
+
+  // --- Qwen Resources API (Skills & Subagents) ---
+  
+  const getQwenResourcePath = (workspace: string, type: 'skills' | 'agents', scope: 'global' | 'project', name: string) => {
+    if (scope === 'global') {
+      return path.join(os.homedir(), '.qwen', type, name);
+    } else {
+      const safeName = workspace ? path.basename(workspace) : 'default';
+      return path.join(WORKSPACES_BASE_DIR, safeName, '.qwen', type, name);
+    }
+  };
+
+  app.get('/api/qwen/resources', async (req, res) => {
+    try {
+      const workspace = req.query.workspace as string || 'default';
+      const types: ('skills' | 'agents')[] = ['skills', 'agents'];
+      const scopes: ('global' | 'project')[] = ['global', 'project'];
+      
+      const results: any = { skills: { global: [], project: [] }, agents: { global: [], project: [] } };
+      
+      for (const type of types) {
+        for (const scope of scopes) {
+          const dir = scope === 'global' 
+            ? path.join(os.homedir(), '.qwen', type)
+            : path.join(WORKSPACES_BASE_DIR, workspace ? path.basename(workspace) : 'default', '.qwen', type);
+          
+          try {
+            await fs.mkdir(dir, { recursive: true });
+            const files = await fs.readdir(dir);
+            results[type][scope] = files.filter(f => f.endsWith('.md')).map(f => ({
+              name: f,
+              path: f,
+              type: 'file'
+            }));
+          } catch (e) {
+            // Directory might not exist or be accessible
+          }
+        }
+      }
+      
+      res.json(results);
+    } catch (error) {
+      console.error('Error listing qwen resources:', error);
+      res.status(500).json({ error: 'Failed to list resources' });
+    }
+  });
+
+  app.get('/api/qwen/resource/content', async (req, res) => {
+    try {
+      const { workspace, type, scope, name } = req.query as any;
+      const filePath = getQwenResourcePath(workspace, type, scope, name);
+      const content = await fs.readFile(filePath, 'utf-8');
+      res.json({ content });
+    } catch (error) {
+      res.status(404).json({ error: 'Resource not found' });
+    }
+  });
+
+  app.post('/api/qwen/resource/content', async (req, res) => {
+    try {
+      const { workspace, type, scope, name, content } = req.body;
+      const filePath = getQwenResourcePath(workspace, type, scope, name);
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, content, 'utf-8');
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to save resource' });
+    }
+  });
+
+  app.post('/api/qwen/resource/create', async (req, res) => {
+    try {
+      const { workspace, type, scope, name } = req.body;
+      const filePath = getQwenResourcePath(workspace, type, scope, name.endsWith('.md') ? name : `${name}.md`);
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, `# ${name}\n\nDescription of this ${type.slice(0, -1)}...`, 'utf-8');
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to create resource' });
+    }
+  });
+
+  app.delete('/api/qwen/resource/delete', async (req, res) => {
+    try {
+      const { workspace, type, scope, name } = req.query as any;
+      const filePath = getQwenResourcePath(workspace, type, scope, name);
+      await fs.unlink(filePath);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to delete resource' });
+    }
   });
 
   // --- Vite Middleware ---

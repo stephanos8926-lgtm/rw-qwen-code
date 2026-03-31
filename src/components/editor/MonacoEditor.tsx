@@ -1,14 +1,16 @@
 import Editor, { useMonaco } from '@monaco-editor/react';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface MonacoEditorProps {
   content: string;
   language: string;
+  activeLine?: number | null;
   onChange: (value: string | undefined) => void;
 }
 
-export function MonacoEditorComponent({ content, language, onChange }: MonacoEditorProps) {
+export function MonacoEditorComponent({ content, language, activeLine, onChange }: MonacoEditorProps) {
   const monaco = useMonaco();
+  const editorRef = useRef<any>(null);
 
   useEffect(() => {
     if (monaco) {
@@ -18,7 +20,7 @@ export function MonacoEditorComponent({ content, language, onChange }: MonacoEdi
         inherit: true,
         rules: [],
         colors: {
-          'editor.background': '#0f111500', // Transparent to let the container background show, though Monaco might not fully support transparency, we try.
+          'editor.background': '#0f111500', 
           'editor.lineHighlightBackground': '#ffffff0a',
           'editorLineNumber.foreground': '#4b5563',
           'editorIndentGuide.background': '#ffffff10',
@@ -29,6 +31,18 @@ export function MonacoEditorComponent({ content, language, onChange }: MonacoEdi
     }
   }, [monaco]);
 
+  useEffect(() => {
+    if (editorRef.current && activeLine) {
+      editorRef.current.revealLineInCenter(activeLine);
+      editorRef.current.setPosition({ lineNumber: activeLine, column: 1 });
+      editorRef.current.focus();
+    }
+  }, [activeLine, editorRef.current]);
+
+  const handleEditorDidMount = (editor: any) => {
+    editorRef.current = editor;
+  };
+
   return (
     <div className="w-full h-full relative">
       <Editor
@@ -36,6 +50,7 @@ export function MonacoEditorComponent({ content, language, onChange }: MonacoEdi
         language={language}
         value={content}
         onChange={onChange}
+        onMount={handleEditorDidMount}
         theme="qwen-dark"
         options={{
           minimap: { enabled: false },

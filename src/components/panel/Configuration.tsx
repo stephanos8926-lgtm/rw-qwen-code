@@ -32,31 +32,34 @@ export function Configuration() {
   const [fontSize, setFontSize] = useState(14);
   const [tabSize, setTabSize] = useState(2);
 
+  const isGlobal = activeTab === 'global';
+
   const fetchConfig = async () => {
     try {
-      const isGlobal = activeTab === 'global';
-      
       const res = await fetch(`/api/config?global=${isGlobal}&workspace=${encodeURIComponent(currentWorkspace)}`);
       const data = await res.json();
       
       if (data.settings) {
+        // Global settings
         setAuthMethod(data.settings.authMethod || 'oauth');
         setApiKey(data.settings.apiKey || '');
         setBaseUrl(data.settings.baseUrl || '');
         setCliBinaryPath(data.settings.cliBinaryPath || '');
-        setAgentModel(data.settings.agentModel || 'qwen-coder');
-        setTemperature(data.settings.temperature ?? 0.7);
-        setMaxTokens(data.settings.maxTokens ?? 4096);
         setTheme(data.settings.theme || 'system');
         setAutoSave(data.settings.autoSave ?? true);
         setFormatOnSave(data.settings.formatOnSave ?? false);
-        setEnableWebSearch(data.settings.enableWebSearch ?? true);
-        setEnableCodeSandbox(data.settings.enableCodeSandbox ?? false);
         setEnableTelemetry(data.settings.enableTelemetry ?? false);
         setFontSize(data.settings.fontSize ?? 14);
         setTabSize(data.settings.tabSize ?? 2);
+
+        // Project settings
+        setAgentModel(data.settings.agentModel || 'qwen-coder');
+        setTemperature(data.settings.temperature ?? 0.7);
+        setMaxTokens(data.settings.maxTokens ?? 4096);
+        setEnableWebSearch(data.settings.enableWebSearch ?? true);
+        setEnableCodeSandbox(data.settings.enableCodeSandbox ?? false);
       } else {
-        // Reset to defaults if no settings found
+        // Reset to defaults
         setAuthMethod('oauth');
         setApiKey('');
         setBaseUrl('');
@@ -98,30 +101,29 @@ export function Configuration() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const isGlobal = activeTab === 'global';
-      
-      const settings = {
+      const settings = isGlobal ? {
         authMethod,
         apiKey,
         baseUrl,
         cliBinaryPath,
-        agentModel,
-        temperature,
-        maxTokens,
         theme,
         autoSave,
         formatOnSave,
-        enableWebSearch,
-        enableCodeSandbox,
         enableTelemetry,
         fontSize,
         tabSize
+      } : {
+        agentModel,
+        temperature,
+        maxTokens,
+        enableWebSearch,
+        enableCodeSandbox
       };
       
       await fetch(`/api/config?global=${isGlobal}&workspace=${encodeURIComponent(currentWorkspace)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings, systemPrompt })
+        body: JSON.stringify({ settings, systemPrompt: isGlobal ? undefined : systemPrompt })
       });
       
       setSaveSuccess(true);
@@ -182,250 +184,244 @@ export function Configuration() {
         </div>
 
         <div className="space-y-6">
-          {/* Qwen CLI Integration */}
-          <div className="bg-[#252526] border border-[#333] rounded-lg p-4 md:p-5">
-            <h3 className="text-lg font-medium text-white mb-4">Qwen CLI Integration</h3>
-            <div className="space-y-5">
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-200 mb-1">Authentication Method</label>
-                <select 
-                  value={authMethod}
-                  onChange={(e) => setAuthMethod(e.target.value as 'oauth' | 'custom')}
-                  className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors"
-                >
-                  <option value="oauth">OAuth (Default)</option>
-                  <option value="custom">Custom API Key</option>
-                </select>
-                <p className="text-xs text-gray-500 mt-1">Choose how to authenticate with the Qwen service.</p>
-              </div>
+          {/* Project Settings */}
+          {activeTab === 'project' && (
+            <div className="bg-[#252526] border border-[#333] rounded-lg p-4 md:p-5">
+              <h3 className="text-lg font-medium text-white mb-4">Project Settings</h3>
+              <div className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-gray-200 mb-1">Agent Model</label>
+                  <select 
+                    value={agentModel}
+                    onChange={(e) => setAgentModel(e.target.value)}
+                    className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors"
+                  >
+                    <option value="qwen-coder">qwen-coder (Default)</option>
+                    <option value="qwen-turbo">qwen-turbo</option>
+                    <option value="qwen-plus">qwen-plus</option>
+                    <option value="qwen-max">qwen-max</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Select the underlying model for Qwen CLI.</p>
+                </div>
 
-              {authMethod === 'custom' && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-200 mb-1">API Key</label>
+                <div>
+                  <label className="block text-sm font-medium text-gray-200 mb-1">Temperature (0.0 - 2.0)</label>
+                  <div className="flex items-center gap-4">
                     <input 
-                      type="password" 
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      placeholder="sk-..." 
-                      className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors" 
+                      type="range" 
+                      min="0" 
+                      max="2" 
+                      step="0.1" 
+                      value={temperature}
+                      onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                      className="w-full accent-primary" 
                     />
-                    <p className="text-xs text-gray-500 mt-1">Your Qwen API Key (stored locally).</p>
+                    <span className="text-sm font-mono bg-[#1e1e1e] px-2 py-1 rounded border border-[#333] w-12 text-center">
+                      {temperature.toFixed(1)}
+                    </span>
                   </div>
+                  <p className="text-xs text-gray-500 mt-1">Higher values make output more random, lower values make it more deterministic.</p>
+                </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-200 mb-1">Max Tokens</label>
+                  <input 
+                    type="number" 
+                    value={maxTokens}
+                    onChange={(e) => setMaxTokens(parseInt(e.target.value))}
+                    placeholder="4096" 
+                    className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors" 
+                  />
+                  <p className="text-xs text-gray-500 mt-1">The maximum number of tokens to generate in the response.</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-200 mb-1">System Prompt</label>
+                  <textarea 
+                    value={systemPrompt}
+                    onChange={(e) => setSystemPrompt(e.target.value)}
+                    placeholder="You are an expert software engineer..." 
+                    className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors resize-y min-h-[120px]" 
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Custom instructions to guide the agent's behavior. Saved to qwen.md in your project root.</p>
+                </div>
+
+                <div className="flex items-center justify-between">
                   <div>
-                    <label className="block text-sm font-medium text-gray-200 mb-1">Base URL</label>
-                    <input 
-                      type="text" 
-                      value={baseUrl}
-                      onChange={(e) => setBaseUrl(e.target.value)}
-                      placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" 
-                      className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors" 
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Custom API endpoint if using a proxy or local model.</p>
+                    <div className="font-medium text-gray-200">Enable Web Search</div>
+                    <div className="text-xs text-gray-500">Allow Qwen to search the web for up-to-date information</div>
                   </div>
-                </>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-200 mb-1">CLI Binary Path</label>
-                <input 
-                  type="text" 
-                  value={cliBinaryPath}
-                  onChange={(e) => setCliBinaryPath(e.target.value)}
-                  placeholder="qwen" 
-                  className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors" 
-                />
-                <p className="text-xs text-gray-500 mt-1">Leave as default to use the binary in PATH.</p>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-200 mb-1">Agent Model</label>
-                <select 
-                  value={agentModel}
-                  onChange={(e) => setAgentModel(e.target.value)}
-                  className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors"
-                >
-                  <option value="qwen-coder">qwen-coder (Default)</option>
-                  <option value="qwen-turbo">qwen-turbo</option>
-                  <option value="qwen-plus">qwen-plus</option>
-                  <option value="qwen-max">qwen-max</option>
-                </select>
-                <p className="text-xs text-gray-500 mt-1">Select the underlying model for Qwen CLI.</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-200 mb-1">Temperature (0.0 - 2.0)</label>
-                <div className="flex items-center gap-4">
-                  <input 
-                    type="range" 
-                    min="0" 
-                    max="2" 
-                    step="0.1" 
-                    value={temperature}
-                    onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                    className="w-full accent-primary" 
-                  />
-                  <span className="text-sm font-mono bg-[#1e1e1e] px-2 py-1 rounded border border-[#333] w-12 text-center">
-                    {temperature.toFixed(1)}
-                  </span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={enableWebSearch}
+                      onChange={(e) => setEnableWebSearch(e.target.checked)}
+                      className="sr-only peer" 
+                    />
+                    <div className="w-9 h-5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">Higher values make output more random, lower values make it more deterministic.</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-200 mb-1">System Prompt</label>
-                <textarea 
-                  value={systemPrompt}
-                  onChange={(e) => setSystemPrompt(e.target.value)}
-                  placeholder="You are an expert software engineer..." 
-                  className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors resize-y min-h-[120px]" 
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Custom instructions to guide the agent's behavior. 
-                  {activeTab === 'project' ? ' Saved to qwen.md in your project root.' : ' Saved to ~/.qwen/qwen.md globally.'}
-                </p>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-200 mb-1">Max Tokens</label>
-                <input 
-                  type="number" 
-                  value={maxTokens}
-                  onChange={(e) => setMaxTokens(parseInt(e.target.value))}
-                  placeholder="4096" 
-                  className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors" 
-                />
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-gray-200">Enable Code Sandbox</div>
+                    <div className="text-xs text-gray-500">Allow Qwen to execute code in an isolated environment</div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={enableCodeSandbox}
+                      onChange={(e) => setEnableCodeSandbox(e.target.checked)}
+                      className="sr-only peer" 
+                    />
+                    <div className="w-9 h-5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* General Settings */}
-          <div className="bg-[#252526] border border-[#333] rounded-lg p-4 md:p-5">
-            <h3 className="text-lg font-medium text-white mb-4">General Settings</h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
+          {/* Global Settings */}
+          {activeTab === 'global' && (
+            <div className="bg-[#252526] border border-[#333] rounded-lg p-4 md:p-5">
+              <h3 className="text-lg font-medium text-white mb-4">Global Settings</h3>
+              <div className="space-y-5">
                 <div>
-                  <div className="font-medium text-gray-200">Theme</div>
-                  <div className="text-xs text-gray-500">Select your preferred UI theme</div>
+                  <label className="block text-sm font-medium text-gray-200 mb-1">Authentication Method</label>
+                  <select 
+                    value={authMethod}
+                    onChange={(e) => setAuthMethod(e.target.value as 'oauth' | 'custom')}
+                    className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors"
+                  >
+                    <option value="oauth">OAuth (Default)</option>
+                    <option value="custom">Custom API Key</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Choose how to authenticate with the Qwen service.</p>
                 </div>
-                <select 
-                  value={theme}
-                  onChange={(e) => setTheme(e.target.value)}
-                  className="bg-[#1e1e1e] border border-[#333] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary transition-colors"
-                >
-                  <option value="dark">Dark</option>
-                  <option value="light">Light</option>
-                  <option value="system">System</option>
-                </select>
-              </div>
-              <div className="flex items-center justify-between">
+
+                {authMethod === 'custom' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-200 mb-1">API Key</label>
+                      <input 
+                        type="password" 
+                        value={apiKey}
+                        onChange={(e) => setApiKey(e.target.value)}
+                        placeholder="sk-..." 
+                        className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors" 
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Your Qwen API Key (stored locally).</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-200 mb-1">Base URL</label>
+                      <input 
+                        type="text" 
+                        value={baseUrl}
+                        onChange={(e) => setBaseUrl(e.target.value)}
+                        placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" 
+                        className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors" 
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Custom API endpoint if using a proxy or local model.</p>
+                    </div>
+                  </>
+                )}
+
                 <div>
-                  <div className="font-medium text-gray-200">Auto Save</div>
-                  <div className="text-xs text-gray-500">Automatically save files after editing</div>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
+                  <label className="block text-sm font-medium text-gray-200 mb-1">CLI Binary Path</label>
                   <input 
-                    type="checkbox" 
-                    checked={autoSave}
-                    onChange={(e) => setAutoSave(e.target.checked)}
-                    className="sr-only peer" 
+                    type="text" 
+                    value={cliBinaryPath}
+                    onChange={(e) => setCliBinaryPath(e.target.value)}
+                    placeholder="qwen" 
+                    className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors" 
                   />
-                  <div className="w-9 h-5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
-                </label>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium text-gray-200">Format on Save</div>
-                  <div className="text-xs text-gray-500">Format document when saving</div>
+                  <p className="text-xs text-gray-500 mt-1">Leave as default to use the binary in PATH.</p>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={formatOnSave}
-                    onChange={(e) => setFormatOnSave(e.target.checked)}
-                    className="sr-only peer" 
-                  />
-                  <div className="w-9 h-5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
-                </label>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium text-gray-200">Enable Web Search</div>
-                  <div className="text-xs text-gray-500">Allow Qwen to search the web for up-to-date information</div>
+                
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-gray-200">Theme</div>
+                    <div className="text-xs text-gray-500">Select your preferred UI theme</div>
+                  </div>
+                  <select 
+                    value={theme}
+                    onChange={(e) => setTheme(e.target.value)}
+                    className="bg-[#1e1e1e] border border-[#333] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary transition-colors"
+                  >
+                    <option value="dark">Dark</option>
+                    <option value="light">Light</option>
+                    <option value="system">System</option>
+                  </select>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={enableWebSearch}
-                    onChange={(e) => setEnableWebSearch(e.target.checked)}
-                    className="sr-only peer" 
-                  />
-                  <div className="w-9 h-5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
-                </label>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium text-gray-200">Enable Code Sandbox</div>
-                  <div className="text-xs text-gray-500">Allow Qwen to execute code in an isolated environment</div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-gray-200">Auto Save</div>
+                    <div className="text-xs text-gray-500">Automatically save files after editing</div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={autoSave}
+                      onChange={(e) => setAutoSave(e.target.checked)}
+                      className="sr-only peer" 
+                    />
+                    <div className="w-9 h-5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={enableCodeSandbox}
-                    onChange={(e) => setEnableCodeSandbox(e.target.checked)}
-                    className="sr-only peer" 
-                  />
-                  <div className="w-9 h-5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
-                </label>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium text-gray-200">Enable Telemetry</div>
-                  <div className="text-xs text-gray-500">Send anonymous usage data to improve Qwen</div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-gray-200">Format on Save</div>
+                    <div className="text-xs text-gray-500">Format document when saving</div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={formatOnSave}
+                      onChange={(e) => setFormatOnSave(e.target.checked)}
+                      className="sr-only peer" 
+                    />
+                    <div className="w-9 h-5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-gray-200">Enable Telemetry</div>
+                    <div className="text-xs text-gray-500">Send anonymous usage data to improve Qwen</div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={enableTelemetry}
+                      onChange={(e) => setEnableTelemetry(e.target.checked)}
+                      className="sr-only peer" 
+                    />
+                    <div className="w-9 h-5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-200 mb-1">Font Size</label>
                   <input 
-                    type="checkbox" 
-                    checked={enableTelemetry}
-                    onChange={(e) => setEnableTelemetry(e.target.checked)}
-                    className="sr-only peer" 
+                    type="number" 
+                    value={fontSize}
+                    onChange={(e) => setFontSize(parseInt(e.target.value))}
+                    className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors" 
                   />
-                  <div className="w-9 h-5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
-                </label>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-200 mb-1">Tab Size</label>
+                  <select 
+                    value={tabSize}
+                    onChange={(e) => setTabSize(parseInt(e.target.value))}
+                    className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors"
+                  >
+                    <option value="2">2 spaces</option>
+                    <option value="4">4 spaces</option>
+                    <option value="8">8 spaces</option>
+                  </select>
+                </div>
               </div>
             </div>
-          </div>
-
-          {/* Editor Settings */}
-          <div className="bg-[#252526] border border-[#333] rounded-lg p-4 md:p-5">
-            <h3 className="text-lg font-medium text-white mb-4">Editor Settings</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-200 mb-1">Font Size</label>
-                <input 
-                  type="number" 
-                  value={fontSize}
-                  onChange={(e) => setFontSize(parseInt(e.target.value))}
-                  className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors" 
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-200 mb-1">Tab Size</label>
-                <select 
-                  value={tabSize}
-                  onChange={(e) => setTabSize(parseInt(e.target.value))}
-                  className="w-full bg-[#1e1e1e] border border-[#333] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors"
-                >
-                  <option value="2">2 spaces</option>
-                  <option value="4">4 spaces</option>
-                  <option value="8">8 spaces</option>
-                </select>
-              </div>
-            </div>
-          </div>
-          
+          )}
         </div>
       </div>
     </div>

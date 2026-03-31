@@ -1,13 +1,14 @@
-import { FileCode2, Save, Play, Loader2, Zap, Code2, X, Settings } from 'lucide-react';
+import { FileCode2, Save, Play, Loader2, Zap, Code2, X, Settings, Bot, ChevronRight } from 'lucide-react';
 import { useWorkspace } from '@/src/context/WorkspaceContext';
 import { useState, useEffect } from 'react';
 import { MonacoEditorComponent } from '../editor/MonacoEditor';
 import { LightweightEditorComponent } from '../editor/LightweightEditor';
 import { Configuration } from '../panel/Configuration';
+import { Breadcrumbs } from '../ui/Breadcrumbs';
 import { cn } from '@/src/lib/utils';
 
 export function MainEditor({ className }: { className?: string }) {
-  const { activeFile, fileContent, isLoading, isSaving, saveFile, openTabs, activeTabId, setActiveTabId, closeTab } = useWorkspace();
+  const { activeFile, activeLine, fileContent, isLoading, isSaving, saveFile, saveQwenResource, openTabs, activeTabId, setActiveTabId, closeTab } = useWorkspace();
   const [localContent, setLocalContent] = useState('');
   const [editorMode, setEditorMode] = useState<'monaco' | 'lightweight'>('monaco');
 
@@ -15,8 +16,14 @@ export function MainEditor({ className }: { className?: string }) {
     setLocalContent(fileContent);
   }, [fileContent]);
 
+  const activeTab = openTabs.find(t => t.id === activeTabId);
+
   const handleSave = () => {
-    saveFile(localContent);
+    if (activeTab?.type === 'qwen-resource') {
+      saveQwenResource(localContent);
+    } else {
+      saveFile(localContent);
+    }
   };
 
   const getLanguage = (filename: string) => {
@@ -40,8 +47,6 @@ export function MainEditor({ className }: { className?: string }) {
         return 'plaintext';
     }
   };
-
-  const activeTab = openTabs.find(t => t.id === activeTabId);
 
   return (
     <main className={cn("flex-1 h-full flex-col bg-background/50 relative flex", className)}>
@@ -80,14 +85,22 @@ export function MainEditor({ className }: { className?: string }) {
         ))}
       </div>
 
-      {/* Editor Header (Only show if a file is active) */}
-      {activeTab?.type === 'file' && (
+      {/* Editor Header (Only show if a file or resource is active) */}
+      {(activeTab?.type === 'file' || activeTab?.type === 'qwen-resource') && (
         <header className="h-12 border-b border-border flex items-center justify-between px-2 sm:px-4 glass-panel-elevated z-10 shrink-0">
           <div className="flex items-center gap-2 overflow-hidden">
-            <div className="flex items-center gap-2 text-sm font-medium text-gray-200 truncate max-w-[120px] sm:max-w-xs">
-              <FileCode2 size={16} className="text-primary shrink-0" />
-              <span className="truncate">{activeFile || 'No file'}</span>
-            </div>
+            {activeTab.type === 'file' ? (
+              <Breadcrumbs path={activeFile || 'No file'} onNavigate={() => {}} />
+            ) : (
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <Bot size={14} className="text-primary" />
+                <span>{activeTab.metadata?.scope === 'global' ? 'Global' : 'Project'}</span>
+                <ChevronRight size={14} />
+                <span>{activeTab.metadata?.type === 'skills' ? 'Skill' : 'Agent'}</span>
+                <ChevronRight size={14} />
+                <span className="text-white">{activeTab.metadata?.name}</span>
+              </div>
+            )}
             {activeFile && (
               <span className="hidden sm:inline-block px-2 py-0.5 rounded-full bg-white/5 text-[10px] text-muted-foreground border border-border shrink-0">
                 {activeFile.split('.').pop()?.toUpperCase()}
@@ -122,19 +135,21 @@ export function MainEditor({ className }: { className?: string }) {
 
             <button 
               onClick={handleSave}
-              disabled={!activeFile || isSaving}
+              disabled={isSaving}
               className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Save File"
+              title="Save"
             >
               {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
             </button>
-            <button 
-              disabled={!activeFile}
-              className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md bg-primary/20 text-primary hover:bg-primary/30 transition-colors text-sm font-medium border border-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Play size={14} />
-              <span className="hidden sm:inline">Run</span>
-            </button>
+            {activeTab.type === 'file' && (
+              <button 
+                disabled={!activeFile}
+                className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md bg-primary/20 text-primary hover:bg-primary/30 transition-colors text-sm font-medium border border-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Play size={14} />
+                <span className="hidden sm:inline">Run</span>
+              </button>
+            )}
           </div>
         </header>
       )}
@@ -157,6 +172,7 @@ export function MainEditor({ className }: { className?: string }) {
             <MonacoEditorComponent 
               content={localContent} 
               language={getLanguage(activeFile || '')} 
+              activeLine={activeLine}
               onChange={(val) => setLocalContent(val || '')} 
             />
           ) : (

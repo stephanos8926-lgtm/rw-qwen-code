@@ -60,3 +60,19 @@
 - **Action**: Updated `Sidebar.tsx` to open the Configuration tab when "Settings" is clicked.
 - **Action**: Added `ResizeObserver` to `TerminalEmulator.tsx` to ensure `xterm.js` resizes correctly within the new split panes.
 - **Status**: Phase 8 complete. Desktop layout now resembles a full IDE.
+
+## [2026-03-31] Phase 9: Git Integration & File Operations
+- **Action**: Installed `simple-git` for Git integration.
+- **Action**: Implemented `/api/git/status`, `/api/git/commit`, `/api/git/push`, `/api/git/pull` backend endpoints.
+- **Action**: Updated `WorkspaceContext` to manage `gitStatus` and `refreshGitStatus`.
+- **Action**: Updated `Sidebar` to display current Git branch.
+- **Action**: Created `ContextMenu.tsx` component.
+- **Action**: Implemented file operations (rename, delete, duplicate, mkdir, copy) in `server.ts`.
+- **Action**: Integrated `ContextMenu` into `SidebarItem`.
+- **Status**: Git Integration (Backend) complete, File Context Menu complete.
+
+## [2026-03-31] Phase 10: Remaining Features
+- [x] Breadcrumbs
+- [x] Recent Files
+- [x] Terminal Tabs
+

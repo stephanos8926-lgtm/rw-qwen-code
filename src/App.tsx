@@ -9,18 +9,27 @@ import { MainEditor } from './components/layout/MainEditor';
 import { SidePanel } from './components/layout/SidePanel';
 import { ChatInterface } from './components/panel/ChatInterface';
 import { TerminalEmulator } from './components/panel/TerminalEmulator';
-import { WorkspaceProvider } from './context/WorkspaceContext';
+import { useWorkspace, WorkspaceProvider } from './context/WorkspaceContext';
 import { CommandPalette } from './components/ui/CommandPalette';
 import { Folder, Code2, TerminalSquare } from 'lucide-react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { useMediaQuery } from './hooks/useMediaQuery';
 
 export default function App() {
-  const [mobileTab, setMobileTab] = useState<'files' | 'editor' | 'panel'>('editor');
-  const isDesktop = useMediaQuery('(min-width: 1024px)');
-
   return (
     <WorkspaceProvider>
+      <AppContent />
+    </WorkspaceProvider>
+  );
+}
+
+function AppContent() {
+  const [mobileTab, setMobileTab] = useState<'files' | 'editor' | 'panel'>('editor');
+  const isDesktop = useMediaQuery('(min-width: 1024px)');
+  const { activeTerminalTabId } = useWorkspace();
+
+  return (
+    <>
       <CommandPalette />
       <div className="h-screen w-screen flex flex-col bg-background text-gray-100 overflow-hidden font-sans">
         
@@ -47,7 +56,7 @@ export default function App() {
                       Terminal
                     </div>
                     <div className="flex-1 relative">
-                      <TerminalEmulator />
+                      {activeTerminalTabId && <TerminalEmulator tabId={activeTerminalTabId} />}
                     </div>
                   </Panel>
                 </Group>
@@ -101,6 +110,6 @@ export default function App() {
         )}
 
       </div>
-    </WorkspaceProvider>
+    </>
   );
 }
