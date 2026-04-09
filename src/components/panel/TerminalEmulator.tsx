@@ -66,8 +66,20 @@ export function TerminalEmulator({ tabId }: { tabId: string }) {
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     
+    const safeFit = () => {
+      try {
+        fitAddon.fit();
+      } catch (e) {
+        // Ignore errors if terminal is not fully initialized
+      }
+    };
+
     term.open(terminalRef.current);
-    fitAddon.fit();
+    
+    // Use requestAnimationFrame to ensure DOM is updated before fitting
+    requestAnimationFrame(() => {
+      safeFit();
+    });
 
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
@@ -172,12 +184,12 @@ export function TerminalEmulator({ tabId }: { tabId: string }) {
 
     // Handle resize
     const handleResize = () => {
-      fitAddon.fit();
+      safeFit();
     };
     window.addEventListener('resize', handleResize);
 
     const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit();
+      safeFit();
     });
     resizeObserver.observe(terminalRef.current);
 
