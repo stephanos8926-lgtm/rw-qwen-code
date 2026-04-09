@@ -5,16 +5,9 @@
  */
 
 import {
-  ContentGenerator,
-} from '../../core/contentGenerator.js';
-import {
-  GenerateContentParameters,
-  GenerateContentResponse,
-  CountTokensParameters,
-  CountTokensResponse,
-  EmbedContentParameters,
-  EmbedContentResponse,
-} from '@google/genai';
+  QwenOperationType,
+  handleQwenApiError,
+} from '../../utils/qwenErrorHandling.js';
 import {
   QwenConfig,
   QwenGenerateRequest,
@@ -84,18 +77,21 @@ export class QwenContentGenerator implements ContentGenerator {
     const endpoint = `${this.baseUrl}/services/aigc/text-generation/generation`;
     qwenApiLogger.logRequest(endpoint, 'POST', requestBody);
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: this.headers,
-      body: JSON.stringify(requestBody),
-      signal: request.config?.abortSignal,
-    });
-
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify(requestBody),
+        signal: request.config?.abortSignal,
+      });
+    } catch (error) {
+      handleQwenApiError(error, QwenOperationType.GENERATE, endpoint);
+    }
 
     if (!response.ok) {
-      const error = await response.text();
-      qwenApiLogger.logError(endpoint, 'POST', new Error(`Qwen API error: ${response.status} - ${error}`));
-      throw new Error(`Qwen API error: ${response.status} - ${error}`);
+      const errorText = await response.text();
+      handleQwenApiError(new Error(`Qwen API error: ${response.status} - ${errorText}`), QwenOperationType.GENERATE, endpoint);
     }
 
     const data = await response.json();
@@ -173,25 +169,29 @@ export class QwenContentGenerator implements ContentGenerator {
     const streamEndpoint = `${this.baseUrl}/services/aigc/text-generation/generation`;
     qwenApiLogger.logRequest(streamEndpoint, 'POST (Stream)', streamRequestBody);
 
-    const response = await fetch(streamEndpoint, {
-      method: 'POST',
-      headers: {
-        ...this.headers,
-        'X-DashScope-SSE': 'enable',
-      },
-      body: JSON.stringify(streamRequestBody),
-      signal: request.config?.abortSignal,
-    });
+    let response: Response;
+    try {
+      response = await fetch(streamEndpoint, {
+        method: 'POST',
+        headers: {
+          ...this.headers,
+          'X-DashScope-SSE': 'enable',
+        },
+        body: JSON.stringify(streamRequestBody),
+        signal: request.config?.abortSignal,
+      });
+    } catch (error) {
+      handleQwenApiError(error, QwenOperationType.STREAM, streamEndpoint);
+    }
 
     if (!response.ok) {
-      const error = await response.text();
-      qwenApiLogger.logError(streamEndpoint, 'POST (Stream)', new Error(`Qwen API error: ${response.status} - ${error}`));
-      throw new Error(`Qwen API error: ${response.status} - ${error}`);
+      const errorText = await response.text();
+      handleQwenApiError(new Error(`Qwen API error: ${response.status} - ${errorText}`), QwenOperationType.STREAM, streamEndpoint);
     }
 
     const reader = response.body?.getReader();
     if (!reader) {
-      throw new Error('No response body');
+      handleQwenApiError(new Error('No response body'), QwenOperationType.STREAM, streamEndpoint);
     }
 
     const decoder = new TextDecoder();

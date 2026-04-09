@@ -30,6 +30,17 @@ async function startServer() {
     return dir;
   };
 
+  // Manage Qwen Assistant instances globally for the server process
+  const assistantPorts = new Map<string, number>();
+  const assistantPromises = new Map<string, Promise<number>>();
+  let nextPort = 3001;
+
+  // Cleanup on server exit
+  process.on('SIGINT', () => {
+    console.log('Server shutting down, cleaning up assistant processes...');
+    process.exit(0);
+  });
+
   async function buildFileTree(dir: string, baseDir: string): Promise<any[]> {
     const items = await fs.readdir(dir, { withFileTypes: true });
     const tree = [];
@@ -573,21 +584,14 @@ async function startServer() {
       if (settings.enableCodeSandbox !== undefined) env.QWEN_ENABLE_CODE_SANDBOX = settings.enableCodeSandbox ? 'true' : 'false';
       if (settings.enableTelemetry !== undefined) env.QWEN_ENABLE_TELEMETRY = settings.enableTelemetry ? 'true' : 'false';
 
-      // Manage Qwen Assistant instances
-      if (!global.assistantPorts) {
-        global.assistantPorts = new Map<string, number>();
-        global.assistantPromises = new Map<string, Promise<number>>();
-        global.nextPort = 3001;
-      }
-
       const getAssistantPort = async () => {
-        if (global.assistantPromises.has(workspaceName)) {
-          return global.assistantPromises.get(workspaceName)!;
+        if (assistantPromises.has(workspaceName)) {
+          return assistantPromises.get(workspaceName)!;
         }
 
         const spawnPromise = (async () => {
-          const port = global.nextPort++;
-          global.assistantPorts.set(workspaceName, port);
+          const port = nextPort++;
+          assistantPorts.set(workspaceName, port);
           
           const qwenEnv = {
             ...env,
@@ -596,12 +600,11 @@ async function startServer() {
             QWEN_CLI_NO_RELAUNCH: 'true'
           };
           
-          console.log(`[Qwen Assistant ${workspaceName}] Starting on 127.0.0.1:${port}...`);
+          console.log(`[Qwen Assistant ${workspaceName}] Starting on 127.0.0.1:${port} with env:`, JSON.stringify(qwenEnv, null, 2));
           
           const qwen = spawn('npx', [cliBinary, '--assistant'], {
             env: qwenEnv,
             cwd: workspaceDir,
-            shell: true
           });
           
           return new Promise<number>((resolve, reject) => {
@@ -630,8 +633,8 @@ async function startServer() {
             
             qwen.on('error', (err) => {
               console.error(`[Qwen Assistant ${workspaceName}] Failed to spawn process:`, err);
-              global.assistantPorts.delete(workspaceName);
-              global.assistantPromises.delete(workspaceName);
+              assistantPorts.delete(workspaceName);
+              assistantPromises.delete(workspaceName);
               if (!resolved) {
                 resolved = true;
                 clearTimeout(timeout);
@@ -641,13 +644,13 @@ async function startServer() {
 
             qwen.on('close', (code) => {
               console.log(`[Qwen Assistant ${workspaceName}] Process exited with code ${code}`);
-              global.assistantPorts.delete(workspaceName);
-              global.assistantPromises.delete(workspaceName);
+              assistantPorts.delete(workspaceName);
+              assistantPromises.delete(workspaceName);
             });
           });
         })();
 
-        global.assistantPromises.set(workspaceName, spawnPromise);
+        assistantPromises.set(workspaceName, spawnPromise);
         return spawnPromise;
       };
 
