@@ -556,7 +556,11 @@ async function startServer() {
       } catch (e) {}
 
       const cliBinary = settings.cliBinaryPath || 'qwen';
-      const env: any = { ...process.env, FORCE_COLOR: '1' };
+      const env: any = { 
+        ...process.env, 
+        FORCE_COLOR: '1',
+        PATH: `${path.join(process.cwd(), 'node_modules', '.bin')}${path.delimiter}${process.env.PATH}`
+      };
       
       if (settings.authMethod === 'custom') {
         if (settings.apiKey) env.QWEN_API_KEY = settings.apiKey;
@@ -572,52 +576,83 @@ async function startServer() {
       // Manage Qwen Assistant instances
       if (!global.assistantPorts) {
         global.assistantPorts = new Map<string, number>();
+        global.assistantPromises = new Map<string, Promise<number>>();
         global.nextPort = 3001;
       }
 
       const getAssistantPort = async () => {
-        if (global.assistantPorts.has(workspaceName)) {
-          return global.assistantPorts.get(workspaceName);
+        if (global.assistantPromises.has(workspaceName)) {
+          return global.assistantPromises.get(workspaceName)!;
         }
-        
-        const port = global.nextPort++;
-        global.assistantPorts.set(workspaceName, port);
-        
-        const qwenEnv = {
-          ...env,
-          QWEN_ASSISTANT_PORT: port.toString(),
-          QWEN_CLI_NO_RELAUNCH: 'true'
-        };
-        
-        const qwen = spawn(cliBinary, ['--assistant'], {
-          env: qwenEnv,
-          cwd: workspaceDir,
-          shell: true
-        });
-        
-        console.log(`[Qwen Assistant ${workspaceName}] Spawning process with PID: ${qwen.pid}`);
-        
-        qwen.stdout.on('data', (data) => console.log(`[Qwen Assistant ${workspaceName} STDOUT] ${data}`));
-        qwen.stderr.on('data', (data) => console.error(`[Qwen Assistant ${workspaceName} STDERR] ${data}`));
-        
-        qwen.on('error', (err) => {
-          console.error(`[Qwen Assistant ${workspaceName}] Failed to spawn process:`, err);
-          global.assistantPorts.delete(workspaceName);
-        });
 
-        qwen.on('close', (code) => {
-          console.log(`[Qwen Assistant ${workspaceName}] Process exited with code ${code}`);
-          global.assistantPorts.delete(workspaceName);
-        });
-        
-        // Wait for server to start
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        return port;
+        const spawnPromise = (async () => {
+          const port = global.nextPort++;
+          global.assistantPorts.set(workspaceName, port);
+          
+          const qwenEnv = {
+            ...env,
+            QWEN_ASSISTANT_HOST: '127.0.0.1',
+            QWEN_ASSISTANT_PORT: port.toString(),
+            QWEN_CLI_NO_RELAUNCH: 'true'
+          };
+          
+          console.log(`[Qwen Assistant ${workspaceName}] Starting on 127.0.0.1:${port}...`);
+          
+          const qwen = spawn('npx', [cliBinary, '--assistant'], {
+            env: qwenEnv,
+            cwd: workspaceDir,
+            shell: true
+          });
+          
+          return new Promise<number>((resolve, reject) => {
+            let resolved = false;
+            const timeout = setTimeout(() => {
+              if (!resolved) {
+                console.warn(`[Qwen Assistant ${workspaceName}] Startup timeout, proceeding anyway...`);
+                resolve(port);
+              }
+            }, 15000);
+
+            qwen.stdout.on('data', (data) => {
+              const output = data.toString();
+              console.log(`[Qwen Assistant ${workspaceName} STDOUT] ${output}`);
+              if (output.includes('Qwen Assistant running at')) {
+                resolved = true;
+                clearTimeout(timeout);
+                resolve(port);
+              }
+            });
+
+            qwen.stderr.on('data', (data) => {
+              const output = data.toString();
+              console.error(`[Qwen Assistant ${workspaceName} STDERR] ${output}`);
+            });
+            
+            qwen.on('error', (err) => {
+              console.error(`[Qwen Assistant ${workspaceName}] Failed to spawn process:`, err);
+              global.assistantPorts.delete(workspaceName);
+              global.assistantPromises.delete(workspaceName);
+              if (!resolved) {
+                resolved = true;
+                clearTimeout(timeout);
+                reject(err);
+              }
+            });
+
+            qwen.on('close', (code) => {
+              console.log(`[Qwen Assistant ${workspaceName}] Process exited with code ${code}`);
+              global.assistantPorts.delete(workspaceName);
+              global.assistantPromises.delete(workspaceName);
+            });
+          });
+        })();
+
+        global.assistantPromises.set(workspaceName, spawnPromise);
+        return spawnPromise;
       };
 
       // Check if the binary is installed
-      const checkQwen = spawn('command', ['-v', cliBinary], { shell: true });
+      const checkQwen = spawn('npx', [cliBinary, '--version'], { shell: true });
       let qwenExists = false;
       
       checkQwen.stdout.on('data', () => { qwenExists = true; });
@@ -631,52 +666,55 @@ async function startServer() {
 
         try {
           const port = await getAssistantPort();
-          const assistantUrl = `ws://localhost:${port}`;
-          console.log(`[Chat Proxy] Connecting to Assistant at ${assistantUrl}`);
+          const assistantUrl = `ws://127.0.0.1:${port}`;
           
-          const qwenWs = new WebSocket(assistantUrl);
-          
-          qwenWs.on('open', () => {
-            console.log(`[Chat Proxy] Connection established to Assistant on port ${port}`);
-          });
+          const connectToAssistant = (retries = 10, delay = 1000) => {
+            console.log(`[Chat Proxy] Connecting to Assistant at ${assistantUrl} (Retries left: ${retries})`);
+            const qwenWs = new WebSocket(assistantUrl);
+            
+            qwenWs.on('open', () => {
+              console.log(`[Chat Proxy] Connection established to Assistant on port ${port}`);
+            });
 
-          qwenWs.on('message', (data) => {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(data);
-            }
-          });
-          
-          ws.on('message', (message) => {
-            console.log(`[Chat Proxy] Forwarding message to Assistant:`, message.toString().substring(0, 100));
-            if (qwenWs.readyState === WebSocket.OPEN) {
-              qwenWs.send(message);
-            } else {
-              console.warn(`[Chat Proxy] Assistant WS not open (state: ${qwenWs.readyState}), message dropped`);
-            }
-          });
-          
-          ws.on('close', () => {
-            console.log(`[Chat Proxy] Client disconnected, closing Assistant connection`);
-            qwenWs.close();
-          });
-          
-          qwenWs.on('close', (code, reason) => {
-            console.log(`[Chat Proxy] Assistant connection closed (code: ${code}, reason: ${reason})`);
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ 
-                type: 'error', 
-                data: 'Qwen Assistant disconnected. This might be due to a crash or the process exiting.' 
-              }));
-              ws.close();
-            }
-          });
-          
-          qwenWs.on('error', (err) => {
-            console.error(`[Chat Proxy] Assistant WS Error:`, err);
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: 'error', data: `Could not connect to Qwen Assistant: ${err.message}` }));
-            }
-          });
+            qwenWs.on('message', (data) => {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(data);
+              }
+            });
+            
+            ws.on('message', (message) => {
+              if (qwenWs.readyState === WebSocket.OPEN) {
+                qwenWs.send(message);
+              }
+            });
+            
+            ws.on('close', () => {
+              qwenWs.close();
+            });
+            
+            qwenWs.on('close', (code, reason) => {
+              console.log(`[Chat Proxy] Assistant connection closed (code: ${code}, reason: ${reason})`);
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ 
+                  type: 'error', 
+                  data: 'Qwen Assistant disconnected.' 
+                }));
+                ws.close();
+              }
+            });
+            
+            qwenWs.on('error', (err) => {
+              console.error(`[Chat Proxy] Assistant WS Error:`, err.message);
+              if (retries > 0 && (err as any).code === 'ECONNREFUSED') {
+                setTimeout(() => connectToAssistant(retries - 1, delay), delay);
+              } else if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'error', data: `Could not connect to Qwen Assistant: ${err.message}` }));
+                ws.close();
+              }
+            });
+          };
+
+          connectToAssistant();
         } catch (err) {
           console.error(`[Chat Proxy] Setup Error:`, err);
           ws.send(JSON.stringify({ type: 'error', data: `Failed to start Qwen Assistant: ${err.message}` }));
