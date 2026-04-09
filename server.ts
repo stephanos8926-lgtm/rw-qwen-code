@@ -569,70 +569,94 @@ async function startServer() {
       if (settings.enableCodeSandbox !== undefined) env.QWEN_ENABLE_CODE_SANDBOX = settings.enableCodeSandbox ? 'true' : 'false';
       if (settings.enableTelemetry !== undefined) env.QWEN_ENABLE_TELEMETRY = settings.enableTelemetry ? 'true' : 'false';
 
+      // Manage Qwen Assistant instances
+      if (!global.assistantPorts) {
+        global.assistantPorts = new Map<string, number>();
+        global.nextPort = 3001;
+      }
+
+      const getAssistantPort = async () => {
+        if (global.assistantPorts.has(workspaceName)) {
+          return global.assistantPorts.get(workspaceName);
+        }
+        
+        const port = global.nextPort++;
+        global.assistantPorts.set(workspaceName, port);
+        
+        const qwenEnv = {
+          ...env,
+          QWEN_ASSISTANT_PORT: port.toString(),
+          QWEN_CLI_NO_RELAUNCH: 'true'
+        };
+        
+        const qwen = spawn(cliBinary, ['--assistant'], {
+          env: qwenEnv,
+          cwd: workspaceDir,
+          shell: true
+        });
+        
+        qwen.stdout.on('data', (data) => console.log(`[Qwen Assistant ${workspaceName}] ${data}`));
+        qwen.stderr.on('data', (data) => console.error(`[Qwen Assistant ${workspaceName} ERR] ${data}`));
+        
+        qwen.on('close', () => {
+          global.assistantPorts.delete(workspaceName);
+        });
+        
+        // Wait for server to start
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        return port;
+      };
+
       // Check if the binary is installed
       const checkQwen = spawn('command', ['-v', cliBinary], { shell: true });
       let qwenExists = false;
       
       checkQwen.stdout.on('data', () => { qwenExists = true; });
       
-      checkQwen.on('close', () => {
+      checkQwen.on('close', async () => {
         if (!qwenExists) {
-          ws.send(JSON.stringify({ type: 'error', content: `${cliBinary} is not installed or not found in your PATH. Please install it to use the chat feature.` }));
-          ws.send(JSON.stringify({ type: 'done' }));
+          ws.send(JSON.stringify({ type: 'error', data: `${cliBinary} is not installed or not found in your PATH. Please install it to use the chat feature.` }));
           ws.close();
           return;
         }
 
-        // Spawn qwen for chat interaction
-        const qwen = spawn(cliBinary, ['--include-directory', workspaceDir], {
-          env,
-          cwd: workspaceDir,
-          shell: true // Use shell to allow resolving from PATH
-        });
-
-        let processDead = false;
-
-        qwen.on('error', (err) => {
-          processDead = true;
-          ws.send(JSON.stringify({ type: 'error', content: `Could not start Qwen CLI: ${err.message}` }));
-          ws.send(JSON.stringify({ type: 'done' }));
-        });
-
-        ws.on('message', (message) => {
-          if (processDead) {
-            ws.send(JSON.stringify({ type: 'error', content: 'The Qwen process is not running. Please reconnect to start a new session.' }));
-            ws.send(JSON.stringify({ type: 'done' }));
-            return;
-          }
-          if (qwen.stdin && qwen.stdin.writable) {
-            qwen.stdin.write(message.toString() + '\n');
-          }
-        });
-
-        qwen.stdout.on('data', (data) => {
-          ws.send(JSON.stringify({ type: 'token', content: data.toString() }));
-        });
-
-        qwen.stderr.on('data', (data) => {
-          ws.send(JSON.stringify({ type: 'token', content: data.toString() }));
-        });
-
-        qwen.on('close', (code) => {
-          processDead = true;
-          if (code === 127) {
-            ws.send(JSON.stringify({ type: 'error', content: 'Qwen CLI binary not found. Please ensure it is installed and available in your system PATH, or update the binary path in Configuration.' }));
-          } else if (code !== 0) {
-            ws.send(JSON.stringify({ type: 'error', content: `Qwen CLI exited unexpectedly (code ${code}).` }));
-          } else {
-            ws.send(JSON.stringify({ type: 'system', content: 'Qwen CLI session ended.' }));
-          }
-          ws.send(JSON.stringify({ type: 'done' }));
-        });
-
-        ws.on('close', () => {
-          if (!processDead) qwen.kill();
-          console.log(`Client disconnected from ${pathname}`);
-        });
+        try {
+          const port = await getAssistantPort();
+          const qwenWs = new WebSocket(`ws://localhost:${port}`);
+          
+          qwenWs.on('message', (data) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(data);
+            }
+          });
+          
+          ws.on('message', (message) => {
+            if (qwenWs.readyState === WebSocket.OPEN) {
+              qwenWs.send(message);
+            }
+          });
+          
+          ws.on('close', () => {
+            qwenWs.close();
+          });
+          
+          qwenWs.on('close', () => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'error', data: 'Qwen Assistant disconnected' }));
+              ws.close();
+            }
+          });
+          
+          qwenWs.on('error', (err) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'error', data: `Could not connect to Qwen Assistant: ${err.message}` }));
+            }
+          });
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'error', data: `Failed to start Qwen Assistant: ${err.message}` }));
+          ws.close();
+        }
       });
       
     } else if (pathname === '/terminal') {

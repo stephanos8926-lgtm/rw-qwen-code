@@ -43,27 +43,60 @@ export function ChatInterface() {
 
     ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'token') {
-          setMessages((prev) => {
-            const newMessages = [...prev];
-            let lastMessage = newMessages[newMessages.length - 1];
-            
-            if (!lastMessage || lastMessage.role !== 'assistant') {
-              lastMessage = { id: Date.now().toString(), role: 'assistant', content: '' };
-              newMessages.push(lastMessage);
-            }
-            
-            lastMessage.content += data.content;
-            return newMessages;
-          });
-        } else if (data.type === 'error') {
-          setMessages((prev) => [...prev, { id: Date.now().toString(), role: 'error', content: data.content }]);
-          setIsStreaming(false);
-        } else if (data.type === 'system') {
-          setMessages((prev) => [...prev, { id: Date.now().toString(), role: 'system', content: data.content }]);
-          setIsStreaming(false);
-        } else if (data.type === 'done') {
+        const message = JSON.parse(event.data);
+        
+        if (message.type === 'system_message') {
+          const data = message.data;
+          
+          if (data.type === 'content') {
+            setMessages((prev) => {
+              const newMessages = [...prev];
+              let lastMessage = newMessages[newMessages.length - 1];
+              
+              if (!lastMessage || lastMessage.role !== 'assistant') {
+                lastMessage = { id: Date.now().toString(), role: 'assistant', content: '' };
+                newMessages.push(lastMessage);
+              }
+              
+              lastMessage.content += data.content;
+              return newMessages;
+            });
+          } else if (data.type === 'completed') {
+            setIsStreaming(false);
+          } else if (data.type === 'tool_call_request') {
+            setMessages((prev) => {
+              const newMessages = [...prev];
+              const toolName = data.toolCall?.name || 'tool';
+              newMessages.push({ 
+                id: Date.now().toString(), 
+                role: 'system', 
+                content: `🛠️ Executing tool: **${toolName}**...` 
+              });
+              return newMessages;
+            });
+          } else if (data.type === 'thought') {
+            setMessages((prev) => {
+              const newMessages = [...prev];
+              let lastMessage = newMessages[newMessages.length - 1];
+              
+              if (!lastMessage || lastMessage.role !== 'system') {
+                lastMessage = { id: Date.now().toString(), role: 'system', content: '' };
+                newMessages.push(lastMessage);
+              }
+              
+              lastMessage.content += `\n> 💭 ${data.thought}`;
+              return newMessages;
+            });
+          } else if (data.type === 'processing') {
+            // Optional: show processing state
+          } else if (data.type === 'welcome') {
+            // Optional: handle welcome message
+          } else if (data.type === 'error') {
+            setMessages((prev) => [...prev, { id: Date.now().toString(), role: 'error', content: data.message || 'An error occurred' }]);
+            setIsStreaming(false);
+          }
+        } else if (message.type === 'error') {
+          setMessages((prev) => [...prev, { id: Date.now().toString(), role: 'error', content: message.data }]);
           setIsStreaming(false);
         }
       } catch (error) {
@@ -106,7 +139,10 @@ export function ChatInterface() {
     setIsStreaming(true);
 
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(userMessage.content);
+      wsRef.current.send(JSON.stringify({
+        type: 'user_message',
+        data: { text: userMessage.content }
+      }));
     }
   };
 
@@ -130,7 +166,10 @@ export function ChatInterface() {
     setIsStreaming(true);
 
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(userMessage.content);
+      wsRef.current.send(JSON.stringify({
+        type: 'user_message',
+        data: { text: userMessage.content }
+      }));
     }
   };
 
