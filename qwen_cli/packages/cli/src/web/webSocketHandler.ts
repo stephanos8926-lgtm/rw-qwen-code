@@ -172,26 +172,74 @@ export class WebSocketHandler {
       // Create abort controller for cancellation support
       const abortController = new AbortController();
       
-      // Keep track of pending tool calls that need execution
-      const pendingToolCalls: ToolCallRequestInfo[] = [];
+      // Keep track of current messages for multi-turn tool execution
+      let currentParts: any[] = parts;
       
-      // Process the turn and stream responses
-      for await (const event of turn.run(parts, abortController.signal)) {
-        // Handle tool call requests by collecting them for execution
-        if (event.type === QwenEventType.ToolCallRequest) {
-          pendingToolCalls.push(event.value);
+      while (true) {
+        // Keep track of pending tool calls that need execution
+        const pendingToolCalls: ToolCallRequestInfo[] = [];
+        
+        // Process the turn and stream responses
+        for await (const event of turn.run(currentParts, abortController.signal)) {
+          // Handle tool call requests by collecting them for execution
+          if (event.type === QwenEventType.ToolCallRequest) {
+            pendingToolCalls.push(event.value);
+          }
+          
+          await this.handleQwenEvent(ws, event);
         }
         
-        await this.handleQwenEvent(ws, event);
-      }
-      
-      // Execute any pending tool calls
-      if (pendingToolCalls.length > 0) {
-        // TODO: Implement tool execution for WebSocket handler
-        // const toolResults = await this.executeToolCalls(pendingToolCalls, abortController.signal);
-        
-        // For now, just log that we have pending tool calls
-        console.log('[WebSocket] Pending tool calls:', pendingToolCalls.length);
+        // Execute any pending tool calls
+        if (pendingToolCalls.length > 0) {
+          const toolRegistry = await this.config.getToolRegistry();
+          const toolResponseParts: ToolCallResponseInfo[] = [];
+
+          for (const requestInfo of pendingToolCalls) {
+            const toolResponse = await executeToolCall(
+              this.config,
+              requestInfo,
+              toolRegistry,
+              abortController.signal,
+            );
+            
+            toolResponseParts.push(toolResponse);
+            
+            // Send tool response to client
+            this.sendToClient(ws, {
+              type: 'system_message',
+              data: {
+                type: 'tool_call_response',
+                toolResponse
+              },
+              timestamp: new Date().toISOString(),
+            });
+          }
+          
+          // Prepare parts for the next turn with tool results
+          const toolResponsePartsList: any[] = [];
+          for (const res of toolResponseParts) {
+            if (res.responseParts) {
+              const parts = Array.isArray(res.responseParts) ? res.responseParts : [res.responseParts];
+              for (const part of parts) {
+                if (typeof part === 'string') {
+                  toolResponsePartsList.push({ text: part });
+                } else if (part) {
+                  toolResponsePartsList.push(part);
+                }
+              }
+            } else {
+              toolResponsePartsList.push({ text: res.resultDisplay || (res.error ? `Error: ${res.error.message}` : 'Success') });
+            }
+          }
+          
+          currentParts = [{ role: 'tool', parts: toolResponsePartsList }];
+          
+          // Continue the loop to let the model process tool results
+          continue;
+        }
+
+        // No more tool calls, we are done
+        break;
       }
 
       // Send completion message

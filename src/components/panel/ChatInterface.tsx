@@ -74,6 +74,17 @@ export function ChatInterface() {
               });
               return newMessages;
             });
+          } else if (data.type === 'tool_call_response') {
+            setMessages((prev) => {
+              const newMessages = [...prev];
+              const result = data.toolResponse?.resultDisplay || (data.toolResponse?.error ? `Error: ${data.toolResponse.error.message}` : 'Success');
+              newMessages.push({ 
+                id: Date.now().toString(), 
+                role: 'system', 
+                content: `✅ Tool result: ${result}` 
+              });
+              return newMessages;
+            });
           } else if (data.type === 'thought') {
             setMessages((prev) => {
               const newMessages = [...prev];
