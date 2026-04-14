@@ -3,6 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import os from 'os';
@@ -33,7 +34,7 @@ async function startServer() {
   // Manage Qwen Assistant instances globally for the server process
   const assistantPorts = new Map<string, number>();
   const assistantPromises = new Map<string, Promise<number>>();
-  let nextPort = 3001;
+  let nextPort = 3002;
 
   // Cleanup on server exit
   process.on('SIGINT', () => {
@@ -600,11 +601,20 @@ async function startServer() {
             QWEN_CLI_NO_RELAUNCH: 'true'
           };
           
-          console.log(`[Qwen Assistant ${workspaceName}] Starting on 127.0.0.1:${port} with env:`, JSON.stringify(qwenEnv, null, 2));
+          console.log(`[Qwen Assistant ${workspaceName}] Starting on 127.0.0.1:${port}`);
+          console.log(`[Qwen Assistant ${workspaceName}] Full Environment:`, JSON.stringify(qwenEnv, null, 2));
           
           const qwen = spawn('npx', [cliBinary, '--assistant'], {
             env: qwenEnv,
             cwd: workspaceDir,
+            stdio: ['pipe', 'pipe', 'pipe']
+          });
+          
+          qwen.on('exit', (code, signal) => {
+            console.log(`[Qwen Assistant ${workspaceName}] Process exited with code ${code} and signal ${signal}`);
+            if (code !== 0 && code !== null) {
+              console.error(`[Qwen Assistant ${workspaceName}] Process exited with non-zero code: ${code}`);
+            }
           });
           
           return new Promise<number>((resolve, reject) => {
@@ -619,7 +629,7 @@ async function startServer() {
             qwen.stdout.on('data', (data) => {
               const output = data.toString();
               console.log(`[Qwen Assistant ${workspaceName} STDOUT] ${output}`);
-              if (output.includes('Qwen Assistant running at')) {
+              if (output.includes('Qwen Assistant running at') || output.includes('Assistant server started') || output.includes('🚀')) {
                 resolved = true;
                 clearTimeout(timeout);
                 resolve(port);
@@ -633,6 +643,8 @@ async function startServer() {
             
             qwen.on('error', (err) => {
               console.error(`[Qwen Assistant ${workspaceName}] Failed to spawn process:`, err);
+              console.error(`[Qwen Assistant ${workspaceName}] Command: npx ${cliBinary}`);
+              console.error(`[Qwen Assistant ${workspaceName}] Env:`, JSON.stringify(qwenEnv, null, 2));
               assistantPorts.delete(workspaceName);
               assistantPromises.delete(workspaceName);
               if (!resolved) {
@@ -642,8 +654,13 @@ async function startServer() {
               }
             });
 
-            qwen.on('close', (code) => {
-              console.log(`[Qwen Assistant ${workspaceName}] Process exited with code ${code}`);
+            qwen.on('exit', (code, signal) => {
+              console.log(`[Qwen Assistant ${workspaceName}] Process exited with code ${code} and signal ${signal}`);
+              if (code !== 0 && code !== null) {
+                console.error(`[Qwen Assistant ${workspaceName}] Process exited with non-zero code: ${code}`);
+              } else if (signal !== null) {
+                console.error(`[Qwen Assistant ${workspaceName}] Process terminated by signal: ${signal}`);
+              }
               assistantPorts.delete(workspaceName);
               assistantPromises.delete(workspaceName);
             });
